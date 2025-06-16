@@ -1,0 +1,182 @@
+local katana = script.Parent.Parent
+local GlobalCharacter = katana.Parent
+local Animations = script.Parent.Parent.Anims
+local HitValue = script.Parent.HitValue
+local Values = script.Parent.Parent.Values
+local Debounce = false
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Stuns = require(ReplicatedStorage.Combat.Stuns)
+local Config = {
+	HitDebounce = 2;
+	ParryStunCD = 1.2
+	
+}
+
+local function applyVelocity(hrp, velocityZ)
+	if hrp then
+		local attachment = Instance.new("Attachment")
+		attachment.Name = "CryoVelocityAttachment"
+		attachment.Parent = hrp
+
+		local velocity = Instance.new("LinearVelocity")
+		velocity.Attachment0 = attachment
+		velocity.MaxForce = math.huge
+		velocity.RelativeTo = Enum.ActuatorRelativeTo.Attachment0
+		velocity.VelocityConstraintMode = Enum.VelocityConstraintMode.Vector
+		velocity.VectorVelocity = Vector3.new(0, 0, velocityZ)
+		velocity.Parent = hrp
+
+		task.delay(0.15, function()
+			velocity:Destroy()
+			attachment:Destroy()
+		end)
+	end
+end
+
+function tagHumanoid(humanoid, player)
+	local creator_tag = Instance.new("ObjectValue")
+	creator_tag.Value = player
+	creator_tag.Name = "creator"
+	creator_tag.Parent = humanoid
+end
+
+function untagHumanoid(humanoid)
+	if humanoid ~= nil then
+		local tag = humanoid:findFirstChild("creator")
+		if tag ~= nil then
+			tag.Parent = nil
+		end
+	end
+end
+
+katana.Activated:Connect(function()
+	local character = katana.Parent
+	local CHrp = character:FindFirstChild("HumanoidRootPart")
+	if Debounce == true and character:FindFirstChild("Stun") == nil then return end
+	
+	for i, v in pairs(Stuns) do
+		if character:FindFirstChild(v) then
+			return
+		end
+	end
+
+	if Debounce == false and character:FindFirstChild("Stun") == nil then
+		Debounce = true
+		Values.Debounce.Value = true
+
+		local Humanoid = character:FindFirstChild("Humanoid")
+
+		local Animator = Humanoid:FindFirstChild("Animator")
+
+		local HitTrack = Animator:LoadAnimation(Animations:FindFirstChild("SamurismHit "..HitValue.Value))
+
+		local HitStun = Instance.new("BoolValue")
+		HitStun.Parent = character
+		HitStun.Name = "Stun"
+
+		HitTrack.Ended:Connect(function()
+			HitStun:Destroy()
+		end)
+		
+		HitTrack:Play()
+		Humanoid.WalkSpeed = 10
+		Humanoid.JumpPower = 0
+		Humanoid.JumpHeight = 0
+		Values.Attacking.Value = true
+
+		HitTrack:GetMarkerReachedSignal("SpawnHitbox"):Connect(function()
+			local Position = CHrp.CFrame * CFrame.new(0, 0, -5)
+			local op = OverlapParams.new()
+			local Damaged = {}
+			local Parried = {}
+			applyVelocity(CHrp, -22)
+			op.FilterType = Enum.RaycastFilterType.Exclude
+			op.FilterDescendantsInstances = {character}
+			Humanoid.WalkSpeed = 4
+			Humanoid.JumpPower = 0
+			Humanoid.JumpHeight = 0
+			local InBounds = workspace:GetPartBoundsInBox(Position, Vector3.new(4, 3.2, 5.5), op)
+
+			for i, v in pairs(InBounds) do
+				if v.Parent and table.find(Damaged, v.Parent) == nil and v.Parent:FindFirstChild("Parrying") == nil then
+
+					if v ~= character then
+						
+						if v.Parent:FindFirstChild("Parrying") then
+							
+							-- v.Parent is the enemy i wrote this because i had trouble remembering
+							local enemy_Animator = v.Parent:FindFirstChild("Humanoid"):FindFirstChild("Animator")
+							HitTrack:Stop()
+							
+							
+							local ParryConfirm = Instance.new("BoolValue")
+							ParryConfirm.Name = "ParriedC"
+							ParryConfirm.Parent = v.Parent
+							
+							task.delay(0.5, function()
+								ParryConfirm:Destroy()
+							end)
+							
+							local parryStun = Instance.new("BoolValue")
+							parryStun.Name = "Stun"
+							parryStun.Parent = character
+							Humanoid.WalkSpeed = 0
+							Humanoid.JumpPower = 0
+							table.insert(Parried, character)
+							
+							v.Parent:FindFirstChild("Parrying"):Destroy()
+							
+							task.delay(Config.ParryStunCD, function()
+								local ParryTableIndex = table.find(Parried, v.Parent)
+								if ParryTableIndex then
+									table.remove(Parried, ParryTableIndex)
+								end
+								
+								Humanoid.WalkSpeed = 16
+								Humanoid.JumpPower = 50
+								parryStun:Destroy()
+							end)
+						end
+						
+						if v.Parent:FindFirstChild("Humanoid") then
+							local HitHum = v.Parent:FindFirstChild("Humanoid")
+							if HitHum.Health > 0 then
+								HitHum:TakeDamage(math.random(10, 15))
+								local Stun = Instance.new("BoolValue")
+								Stun.Parent = v.Parent
+								Stun.Name = "Stun"
+								table.insert(Damaged, v.Parent)
+								tagHumanoid(HitHum, game.Players:GetPlayerFromCharacter(character))
+
+								task.delay(0.5, function()
+									Stun:Destroy()
+									local TableIndex = table.find(Damaged, v.Parent)
+									table.remove(Damaged, TableIndex)
+									untagHumanoid(HitHum)
+								end)
+							end
+						end
+					end
+				end
+			end	
+		end)
+
+		HitTrack:GetMarkerReachedSignal("DespawnHitbox"):Connect(function()
+			Humanoid.WalkSpeed = 16
+			Humanoid.JumpPower = 50
+			Humanoid.JumpHeight = 7.2
+			Values.Attacking.Value = false
+			
+		end)
+
+
+
+		task.delay(Config.HitDebounce, function()
+			Debounce = false
+			Values.Debounce.Value = false
+		end)
+	end
+
+
+
+end)
